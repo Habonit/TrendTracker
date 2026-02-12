@@ -1,0 +1,15 @@
+[project]
+name = "use_google_api_key"
+version = "0.1.0"
+description = "A simple project to call Gemini API using google-genai SDK"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "google-genai",
+    "python-dotenv",
+]
+
+[dependency-groups]
+dev = [
+    "jupyter",
+]
