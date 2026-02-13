@@ -47,19 +47,13 @@ class TestIntegration(unittest.TestCase):
         mock_db.query.return_value.filter.return_value.order_by.return_value.first.return_value = None
         self.assertFalse(service.is_duplicate("new_keyword"))
 
-    @patch('services.trend_service.TrendReq')
-    def test_trend_service_fetch(self, MockTrendReq):
+    def test_trend_service_fetch(self):
         # Setup
-        mock_pytrends = MockTrendReq.return_value
         service = TrendService()
         
-        # Mock response from pytrends
-        mock_df = pd.DataFrame({'title': ['trend1', 'trend2']})
-        mock_pytrends.trending_searches.return_value = mock_df
-        
+        # Test that trending keywords return empty list (disabled feature)
         trends = service.get_trending_keywords(category='all', limit=2)
-        self.assertEqual(len(trends), 2)
-        self.assertEqual(trends[0], 'trend1')
+        self.assertEqual(trends, [])
 
     # --- Phase 2: Monitoring & Scheduler ---
     @patch('services.monitoring_service.SessionLocal')
@@ -100,25 +94,13 @@ class TestIntegration(unittest.TestCase):
         self.assertTrue(result)
         self.assertTrue(mock_db.add.called)
 
-    @patch('services.trend_service.TrendReq')
-    def test_trend_analytics(self, MockTrendReq):
-        mock_pytrends = MockTrendReq.return_value
+    def test_trend_analytics(self):
         service = TrendService()
         
-        # Mock interest over time data
-        # Index needs to be set so reset_index works effectively
-        mock_return_df = pd.DataFrame({'bitcoin': [50, 80]}, index=pd.to_datetime(['2024-01-01', '2024-01-02']))
-        mock_return_df.index.name = 'date'
-        
-        # Configure mock to return this DF
-        mock_pytrends.interest_over_time.return_value = mock_return_df
-        
+        # Test that interest over time returns empty DataFrame (disabled feature)
         result = service.get_interest_over_time("bitcoin")
         
-        # reset_index should move 'date' index to a column
-        self.assertFalse(result.empty)
-        # Check if 'date' is in columns OR 'index' if name was None
-        self.assertTrue('date' in result.columns or 'index' in result.columns)
+        self.assertTrue(result.empty)
 
     # --- Phase 4: Intelligence & Reliability ---
     @patch('services.reliability_service.SessionLocal')

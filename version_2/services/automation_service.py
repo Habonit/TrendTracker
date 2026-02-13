@@ -47,20 +47,18 @@ class AutomationService:
         results = []
         
         # 0. Fetch Subscribed Keywords (Priority)
+        # 0. Fetch Subscribed Keywords (Priority)
         subscribed_keywords = self.subscription_service.get_all_keywords()
         logger.info(f"Processing {len(subscribed_keywords)} subscribed keywords.")
         
-        # Combine sources: Subscriptions first, then Trends
-        # We might want to limit total processing or just ensure subscriptions are always processed.
-        # For now, let's process all subscriptions + (limit) trends.
+        # 1. Google Trends (Disabled)
+        # As per user request (2026-02-13), we are not fetching trending keywords from Google Trends.
+        # We only process subscribed keywords.
+        trend_keywords = [] 
+        # trend_keywords = self.trend_service.get_trending_keywords(category=category, limit=limit)
         
-        # 1. Fetch trends
-        trend_keywords = self.trend_service.get_trending_keywords(category=category, limit=limit)
-        logger.info(f"Fetched {len(trend_keywords)} trending keywords: {trend_keywords}")
-        
-        # Create a unique list, prioritizing subscriptions
-        # We filter out timestamps or other metadata if present
-        all_keywords = list(set(subscribed_keywords + trend_keywords))
+        # Create a unique list
+        all_keywords = list(set(subscribed_keywords))
         
         # If we want to strictly follow 'limit' for trends but always do subscriptions:
         # But the requirement says "prioritize".

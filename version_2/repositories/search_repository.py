@@ -166,3 +166,68 @@ class SearchRepository:
             return results
         finally:
             db.close()
+
+    def delete_by_keys(self, search_keys: List[str]) -> int:
+        """
+        주어진 search_key 리스트에 해당하는 검색 결과를 삭제합니다.
+        cascade 설정에 의해 관련 articles도 함께 삭제됩니다.
+        Returns: 삭제된 행 수
+        """
+        db = self.get_db()
+        try:
+            deleted = db.query(SearchResultModel).filter(
+                SearchResultModel.search_key.in_(search_keys)
+            ).delete(synchronize_session='fetch')
+            db.commit()
+            return deleted
+        except Exception as e:
+            print(f"Error deleting from DB: {e}")
+            db.rollback()
+            return 0
+        finally:
+            db.close()
+
+    def get_selected_as_csv(self, search_keys: List[str]) -> str:
+        """
+        선택된 search_key들에 해당하는 데이터를 CSV 문자열로 반환합니다.
+        인코딩: utf-8-sig (Excel 호환)
+        """
+        db = self.get_db()
+        try:
+            results = (db.query(SearchResultModel)
+                       .filter(SearchResultModel.search_key.in_(search_keys))
+                       .order_by(SearchResultModel.created_at.desc())
+                       .all())
+            
+            data = []
+            for res in results:
+                if res.articles:
+                    for i, art in enumerate(res.articles, 1):
+                        data.append({
+                            "search_key": res.search_key,
+                            "search_time": res.created_at,
+                            "keyword": res.keyword,
+                            "source": res.source,
+                            "article_index": i,
+                            "title": art.title,
+                            "url": art.url,
+                            "snippet": art.snippet,
+                            "ai_summary": res.ai_summary
+                        })
+                else:
+                    data.append({
+                        "search_key": res.search_key,
+                        "search_time": res.created_at,
+                        "keyword": res.keyword,
+                        "source": res.source,
+                        "article_index": 0,
+                        "title": "",
+                        "url": "",
+                        "snippet": "",
+                        "ai_summary": res.ai_summary
+                    })
+            
+            df = pd.DataFrame(data)
+            return df.to_csv(index=False, encoding='utf-8-sig')
+        finally:
+            db.close()

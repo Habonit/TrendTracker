@@ -105,6 +105,9 @@ class SchedulerManager:
                     **kwargs
                 },
                 replace_existing=True,
+                max_instances=1,
+                coalesce=True,
+                misfire_grace_time=120,
                 next_run_time=datetime.now() # Run immediately on update
             )
             logger.info(f"Updated job {self.job_id} to run every {seconds} seconds.")
