@@ -19,6 +19,5 @@ dependencies = [
     "streamlit>=1.54.0",
     "tavily-python>=0.7.21",
     "tenacity>=9.1.4",
-    "wordcloud>=1.9.6",
-    "xhtml2pdf>=0.2.17",
+    "wordcloud>=1.9.6"
 ]
