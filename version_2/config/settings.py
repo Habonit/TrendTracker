@@ -24,6 +24,20 @@ class Settings:
         else:
             self.SEARCH_DOMAINS = []
 
+        # 알림 설정 (Optional)
+        self.DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
+        self.SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_URL")
+        self.TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+        self.TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+        
+        self.EMAIL_SMTP_SERVER = os.getenv("EMAIL_SMTP_SERVER", "smtp.gmail.com")
+        self.EMAIL_SMTP_PORT = int(os.getenv("EMAIL_SMTP_PORT", 587))
+        self.EMAIL_SENDER = os.getenv("EMAIL_SENDER")
+        self.EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
+        
+        email_recipients_str = os.getenv("EMAIL_RECIPIENTS", "")
+        self.EMAIL_RECIPIENTS = [e.strip() for e in email_recipients_str.split(",") if e.strip()]
+
     def _get_required_env(self, key: str, error_msg: str) -> str:
         """
         필수 환경변수를 가져오고 없으면 에러를 발생시킵니다.

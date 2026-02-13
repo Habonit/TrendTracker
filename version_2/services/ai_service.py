@@ -76,3 +76,40 @@ def summarize_news(articles: List[NewsArticle]) -> str:
                 raise AppError("bad_request")
             else:
                 raise AppError("ai_error")
+
+
+def generate_daily_insight(trend_context: str) -> str:
+    """
+    일간 트렌드 리포트를 위한 인사이트를 생성합니다.
+    """
+    if not settings.GEMINI_API_KEY:
+        return "API 키가 설정되지 않아 리포트를 생성할 수 없습니다."
+        
+    try:
+        client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        
+        prompt = f"""
+당신은 트렌드 분석 전문가입니다. 다음은 지난 24시간 동안 수집된 주요 뉴스 트렌드 목록입니다.
+이를 바탕으로 '일간 트렌드 인사이트 리포트'를 작성해주세요.
+
+[구성 요소]
+1. 🌟 **오늘의 핵심 키워드**: 가장 중요한 키워드 3개를 선정하고 이유를 한 줄로 설명하세요.
+2. 📈 **시장/사회 영향 분석**: 위 트렌드들이 경제, 기술, 또는 사회에 미칠 잠재적 영향을 2~3문장으로 분석하세요.
+3. 📝 **종합 요약**: 전체적인 흐름을 3줄 내외로 요약하세요.
+
+[트렌드 데이터]
+{trend_context}
+
+작성 언어: 한국어
+톤앤매너: 전문적이고 통찰력 있게
+""".strip()
+
+        response = client.models.generate_content(
+            model=settings.GEMINI_MODEL,
+            contents=prompt
+        )
+        
+        return response.text if response and response.text else "리포트 생성에 실패했습니다."
+        
+    except Exception as e:
+        return f"AI 서비스 오류로 리포트를 생성할 수 없습니다: {str(e)}"

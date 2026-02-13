@@ -14,6 +14,7 @@ class SearchResult:
     keyword: str                  # 검색 키워드
     articles: List[NewsArticle]   # 뉴스 기사 리스트
     ai_summary: str               # AI 요약 결과
+    source: str = "manual"        # 데이터 출처 (auto/manual)
 
     def to_dataframe(self) -> pd.DataFrame:
         """

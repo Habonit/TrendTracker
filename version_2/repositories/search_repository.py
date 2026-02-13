@@ -1,142 +1,168 @@
-import os
-import pandas as pd
-from typing import List, Optional
-from datetime import datetime
-import logging
+from sqlalchemy.orm import Session
+from database.session import SessionLocal
+from domain.models import SearchResult as SearchResultModel, NewsArticle as NewsArticleModel, SearchSource
 from domain.search_result import SearchResult
 from domain.news_article import NewsArticle
-
-# 로깅 설정
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+from datetime import datetime
+import pandas as pd
+from typing import List, Optional
 
 class SearchRepository:
-    """
-    CSV 파일을 통해 뉴스 검색 결과를 관리하는 리포지토리 클래스
-    """
-    
-    COLUMNS = [
-        "search_key", "search_time", "keyword", "article_index",
-        "title", "url", "snippet", "ai_summary"
-    ]
-
-    def __init__(self, csv_path: str):
+    def __init__(self, csv_path: str = None):
+        # csv_path는 하위 호환성을 위해 남겨두지만 실제로는 사용하지 않음 (또는 마이그레이션 용도)
         self.csv_path = csv_path
-        self._ensure_directory()
 
-    def _ensure_directory(self):
-        """
-        데이터 저장 폴더가 없으면 생성합니다.
-        """
-        directory = os.path.dirname(self.csv_path)
-        if directory and not os.path.exists(directory):
-            try:
-                os.makedirs(directory, exist_ok=True)
-                logger.info(f"데이터 디렉토리 생성 완료: {directory}")
-            except Exception as e:
-                logger.error(f"디렉토리 생성 실패: {e}")
+    def get_db(self):
+        return SessionLocal()
 
-    def load(self) -> pd.DataFrame:
+    def save(self, result: SearchResult) -> bool:
         """
-        CSV 파일을 로드합니다. 파일이 없으면 빈 DataFrame을 반환합니다.
+        도메인 객체(SearchResult)를 받아 DB에 저장합니다.
         """
-        if not os.path.exists(self.csv_path):
-            return pd.DataFrame(columns=self.COLUMNS)
-        
+        db = self.get_db()
         try:
-            df = pd.read_csv(self.csv_path)
-            # 저장된 데이터의 컬럼이 일치하는지 확인 (간단한 검증)
-            for col in self.COLUMNS:
-                if col not in df.columns:
-                    df[col] = None
-            return df[self.COLUMNS]
-        except Exception as e:
-            logger.warning(f"CSV 로드 실패: {e}. 빈 데이터를 반환합니다.")
-            return pd.DataFrame(columns=self.COLUMNS)
+            # 중복 체크 (search_key 기준)
+            existing = db.query(SearchResultModel).filter(SearchResultModel.search_key == result.search_key).first()
+            if existing:
+                # 이미 존재하면 업데이트하거나 스킵 (여기서는 스킵 또는 에러 처리)
+                # 현재 로직상 덮어쓰기보다는 새로 생성되는 구조임
+                return True
 
-    def save(self, search_result: SearchResult) -> bool:
-        """
-        검색 결과를 CSV 파일에 추가 저장합니다.
-        """
-        try:
-            new_df = search_result.to_dataframe()
+            # 도메인 객체 -> ORM 모델 변환
+            db_result = SearchResultModel(
+                search_key=result.search_key,
+                keyword=result.keyword,
+                # source 필드는 도메인 객체에 없으면 default 'manual', 있으면 가져옴
+                # 현재 도메인 객체에는 source가 없으므로 추후 추가 필요. 일단 'manual'로 가정하거나 kwargs 처리
+                source=getattr(result, 'source', SearchSource.MANUAL.value),
+                created_at=result.search_time,
+                ai_summary=result.ai_summary
+            )
             
-            if os.path.exists(self.csv_path):
-                # 기존 데이터에 추가
-                existing_df = self.load()
-                updated_df = pd.concat([existing_df, new_df], ignore_index=True)
-                updated_df.to_csv(self.csv_path, index=False, encoding='utf-8-sig')
-            else:
-                # 새 파일 생성
-                new_df.to_csv(self.csv_path, index=False, encoding='utf-8-sig')
+            # 기사들 변환 및 추가
+            for article in result.articles:
+                db_article = NewsArticleModel(
+                    title=article.title,
+                    url=article.url,
+                    snippet=article.snippet,
+                    content=getattr(article, 'content', None) # 도메인 객체에 내용이 있다면
+                )
+                db_result.articles.append(db_article)
             
-            logger.info(f"검색 결과 저장 완료: {search_result.search_key}")
+            db.add(db_result)
+            db.commit()
             return True
         except Exception as e:
-            logger.error(f"데이터 저장 중 에러 발생: {e}")
+            print(f"Error saving to DB: {e}")
+            db.rollback()
             return False
+        finally:
+            db.close()
 
     def get_all_keys(self) -> List[str]:
         """
-        중복 제거된 모든 search_key 리스트를 최신순으로 반환합니다.
+        저장된 모든 검색 키(search_key) 리스트를 반환합니다.
+        최신순 정렬.
         """
-        df = self.load()
-        if df.empty:
-            return []
-        
-        # search_time을 기준으로 정렬 후 중복 제거된 키 추출
+        db = self.get_db()
         try:
-            # 시간 형식 변환 (문자열인 경우 대비)
-            df['search_time'] = pd.to_datetime(df['search_time'])
-            sorted_df = df.sort_values(by="search_time", ascending=False)
-            keys = sorted_df['search_key'].unique().tolist()
-            return keys
-        except Exception as e:
-            logger.error(f"키 목록 추출 실패: {e}")
-            return df['search_key'].unique().tolist()
+            results = db.query(SearchResultModel.search_key).order_by(SearchResultModel.created_at.desc()).all()
+            return [r[0] for r in results]
+        finally:
+            db.close()
 
     def find_by_key(self, search_key: str) -> Optional[SearchResult]:
         """
-        search_key로 검색 결과를 찾아 SearchResult 객체로 재구성합니다.
+        특정 키에 해당하는 검색 결과를 도메인 객체로 변환하여 반환합니다.
         """
-        df = self.load()
-        if df.empty:
-            return None
-        
-        filtered_df = df[df['search_key'] == search_key]
-        if filtered_df.empty:
-            return None
-        
-        # 첫 번째 행에서 공통 정보 추출
-        first_row = filtered_df.iloc[0]
-        
-        articles = []
-        # 정렬하여 기사 순서 유지
-        for _, row in filtered_df.sort_values(by="article_index").iterrows():
-            articles.append(NewsArticle(
-                title=str(row['title']),
-                url=str(row['url']),
-                snippet=str(row['snippet'])
-            ))
-        
+        db = self.get_db()
         try:
-            search_time = pd.to_datetime(first_row['search_time'])
-        except:
-            search_time = datetime.now()
+            db_result = db.query(SearchResultModel).filter(SearchResultModel.search_key == search_key).first()
+            if not db_result:
+                return None
+            
+            # ORM -> 도메인 객체 변환
+            articles = [
+                NewsArticle(
+                    title=a.title,
+                    url=a.url,
+                    snippet=a.snippet or "",
+                    pub_date="" # DB에 저장 안했으면 빈값, 필요시 추가
+                ) for a in db_result.articles
+            ]
+            
+            return SearchResult(
+                search_key=db_result.search_key,
+                search_time=db_result.created_at,
+                keyword=db_result.keyword,
+                articles=articles,
+                ai_summary=db_result.ai_summary or ""
+            )
+        finally:
+            db.close()
 
-        return SearchResult(
-            search_key=str(first_row['search_key']),
-            search_time=search_time,
-            keyword=str(first_row['keyword']),
-            articles=articles,
-            ai_summary=str(first_row['ai_summary'])
-        )
-
-    def get_all_as_csv(self) -> str:
+    def get_all_as_csv(self) -> pd.DataFrame:
         """
-        전체 데이터를 CSV 형식의 문자열로 반환합니다.
+        모든 데이터를 DataFrame으로 변환 (CSV export용)
+        Long format: 기사 1건 = 1행
         """
-        df = self.load()
-        if df.empty:
-            return ""
-        return df.to_csv(index=False, encoding='utf-8-sig')
+        db = self.get_db()
+        try:
+            # Join query to get result info + article info
+            results = db.query(SearchResultModel).order_by(SearchResultModel.created_at.desc()).all()
+            
+            data = []
+            for res in results:
+                for i, art in enumerate(res.articles, 1):
+                    data.append({
+                        "search_key": res.search_key,
+                        "search_time": res.created_at,
+                        "keyword": res.keyword,
+                        "source": res.source, # 추가된 필드
+                        "article_index": i,
+                        "title": art.title,
+                        "url": art.url,
+                        "snippet": art.snippet,
+                        "ai_summary": res.ai_summary
+                    })
+            
+            return pd.DataFrame(data)
+        finally:
+            db.close()
+    def get_all_results_obj(self, limit: int = 100) -> List[SearchResult]:
+        """
+        최근 검색 결과를 도메인 객체 리스트로 반환합니다.
+        """
+        db = self.get_db()
+        try:
+            db_results = db.query(SearchResultModel).order_by(SearchResultModel.created_at.desc()).limit(limit).all()
+            
+            results = []
+            for db_res in db_results:
+                articles = [
+                    NewsArticle(
+                        title=a.title,
+                        url=a.url,
+                        snippet=a.snippet or "",
+                        pub_date=""
+                    ) for a in db_res.articles
+                ]
+                
+                # Handle source field safely
+                params = {
+                    "search_key": db_res.search_key,
+                    "search_time": db_res.created_at,
+                    "keyword": db_res.keyword,
+                    "articles": articles,
+                    "ai_summary": db_res.ai_summary or ""
+                }
+                
+                # SearchResult dataclass might have 'source' field
+                if hasattr(SearchResult, 'source'):
+                    params['source'] = db_res.source
+                
+                results.append(SearchResult(**params))
+                
+            return results
+        finally:
+            db.close()
